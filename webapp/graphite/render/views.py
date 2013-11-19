@@ -38,6 +38,7 @@ from graphite.render.attime import parseATTime
 from graphite.render.functions import PieFunctions
 from graphite.render.hashing import hashRequest, hashData
 from graphite.render.glyph import GraphTypes
+from graphite.render.decorators import check_target
 
 from django.http import HttpResponse, HttpResponseServerError, HttpResponseRedirect
 from django.template import Context, loader
@@ -45,7 +46,7 @@ from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.conf import settings
 
-
+@check_target
 def renderView(request):
   start = time()
   (graphOptions, requestOptions) = parseOptions(request)
