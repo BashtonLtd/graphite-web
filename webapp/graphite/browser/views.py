@@ -170,6 +170,9 @@ def userGraphLookup(request):
 
   nodes = []
 
+  if not request.user.is_staff:
+    return json_response(nodes, request)
+
   branchNode = {
     'allowChildren' : 1,
     'expandable' : 1,

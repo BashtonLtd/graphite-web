@@ -131,6 +131,7 @@ def context_view(request):
 def find_view(request):
   "View for finding metrics matching a given pattern"
   profile = getProfile(request)
+  user_targets = profile.targets.split(',')
   format = request.REQUEST.get('format', 'treejson')
   local_only = int( request.REQUEST.get('local', 0) )
   contexts = int( request.REQUEST.get('contexts', 0) )
@@ -174,8 +175,11 @@ def find_view(request):
   matches.sort(key=lambda node: node.name)
 
   if format == 'treejson':
-    content = tree_json(matches, base_path, wildcards=profile.advancedUI or wildcards, contexts=contexts)
-    response = HttpResponse(content, mimetype='application/json')
+    if request.user.is_authenticated():
+      content = tree_json(matches, request.user.is_staff, profile.targets, base_path, wildcards=profile.advancedUI or wildcards)
+    else:
+      content = []
+    response = json_response_for(request, content)
 
   elif format == 'pickle':
     content = pickle_nodes(matches, contexts=contexts)
@@ -189,11 +193,23 @@ def find_view(request):
       node_info = dict(path=node.metric_path, name=node.name, is_leaf=str(int(node.isLeaf())))
       if not node.isLeaf():
         node_info['path'] += '.'
-      results.append(node_info)
+
+      add_node = False
+      if request.user.is_staff:
+        add_node = True
+      else:
+        if request.user.is_authenticated():
+          for user_target in user_targets:
+            if user_target.startswith(node.path) or node.path.startswith(user_target):
+              add_node = True
+
+      if add_node:
+        results.append(node_info)
 
     if len(results) > 1 and wildcards:
       wildcardNode = {'name' : '*'}
-      results.append(wildcardNode)
+      if add_node:
+        results.append(wildcardNode)
 
     content = json.dumps({ 'metrics' : results })
     response = HttpResponse(content, mimetype='application/json')
@@ -290,8 +306,9 @@ def set_metadata_view(request):
   return HttpResponse(json.dumps(results), mimetype='application/json')
 
 
-def tree_json(nodes, base_path, wildcards=False, contexts=False):
+def tree_json(nodes, staff, targets, base_path, wildcards=False):
   results = []
+  user_targets = targets.split(',')
 
   branchNode = {
     'allowChildren': 1,
@@ -329,17 +346,22 @@ def tree_json(nodes, base_path, wildcards=False, contexts=False):
       'id' : base_path + str(node.name),
     }
 
-    if contexts:
-      resultNode['context'] = node.context
-    else:
-      resultNode['context'] = {}
 
-    if node.isLeaf():
-      resultNode.update(leafNode)
-      results_leaf.append(resultNode)
+    add_node = False
+    if staff:
+      add_node = True
     else:
-      resultNode.update(branchNode)
-      results_branch.append(resultNode)
+      for user_target in user_targets:
+        if user_target.startswith(resultNode['id']) or resultNode['id'].startswith(user_target):
+          add_node = True
+
+    if add_node:
+      if node.is_leaf:
+        resultNode.update(leafNode)
+        results_leaf.append(resultNode)
+      else:
+        resultNode.update(branchNode)
+        results_branch.append(resultNode)
 
   results.extend(results_branch)
   results.extend(results_leaf)
