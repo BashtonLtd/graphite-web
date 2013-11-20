@@ -76,6 +76,7 @@ def search_view(request):
 def find_view(request):
   "View for finding metrics matching a given pattern"
   profile = getProfile(request)
+  user_targets = profile.targets.split(',')
   format = request.REQUEST.get('format', 'treejson')
   local_only = int( request.REQUEST.get('local', 0) )
   wildcards = int( request.REQUEST.get('wildcards', 0) )
@@ -122,7 +123,10 @@ def find_view(request):
   log.info("received remote find request: pattern=%s from=%s until=%s local_only=%s format=%s matches=%d" % (query, fromTime, untilTime, local_only, format, len(matches)))
 
   if format == 'treejson':
-    content = tree_json(matches, base_path, wildcards=profile.advancedUI or wildcards)
+    if request.user.is_authenticated():
+      content = tree_json(matches, request.user.is_staff, profile.targets, base_path, wildcards=profile.advancedUI or wildcards)
+    else:
+      content = []
     response = json_response_for(request, content)
 
   elif format == 'pickle':
@@ -135,11 +139,23 @@ def find_view(request):
       node_info = dict(path=node.path, name=node.name, is_leaf=str(int(node.is_leaf)))
       if not node.is_leaf:
         node_info['path'] += '.'
-      results.append(node_info)
+
+      add_node = False
+      if request.user.is_staff:
+        add_node = True
+      else:
+        if request.user.is_authenticated():
+          for user_target in user_targets:
+            if user_target.startswith(node.path) or node.path.startswith(user_target):
+              add_node = True
+
+      if add_node:
+        results.append(node_info)
 
     if len(results) > 1 and wildcards:
       wildcardNode = {'name' : '*'}
-      results.append(wildcardNode)
+      if add_node:
+        results.append(wildcardNode)
 
     response = json_response_for(request, { 'metrics' : results})
 
@@ -230,8 +246,9 @@ def set_metadata_view(request):
   return json_response_for(request, results)
 
 
-def tree_json(nodes, base_path, wildcards=False):
+def tree_json(nodes, staff, targets, base_path, wildcards=False):
   results = []
+  user_targets = targets.split(',')
 
   branchNode = {
     'allowChildren': 1,
@@ -269,12 +286,22 @@ def tree_json(nodes, base_path, wildcards=False):
       'id' : base_path + str(node.name),
     }
 
-    if node.is_leaf:
-      resultNode.update(leafNode)
-      results_leaf.append(resultNode)
+
+    add_node = False
+    if staff:
+      add_node = True
     else:
-      resultNode.update(branchNode)
-      results_branch.append(resultNode)
+      for user_target in user_targets:
+        if user_target.startswith(resultNode['id']) or resultNode['id'].startswith(user_target):
+          add_node = True
+
+    if add_node:
+      if node.is_leaf:
+        resultNode.update(leafNode)
+        results_leaf.append(resultNode)
+      else:
+        resultNode.update(branchNode)
+        results_branch.append(resultNode)
 
   results.extend(results_branch)
   results.extend(results_leaf)
