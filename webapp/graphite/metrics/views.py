@@ -179,7 +179,7 @@ def find_view(request):
       content = tree_json(matches, request.user.is_staff, profile.targets, base_path, wildcards=profile.advancedUI or wildcards)
     else:
       content = []
-    response = json_response_for(request, content)
+    response = HttpResponse(content, mimetype='application/json')
 
   elif format == 'pickle':
     content = pickle_nodes(matches, contexts=contexts)
@@ -356,7 +356,7 @@ def tree_json(nodes, staff, targets, base_path, wildcards=False):
           add_node = True
 
     if add_node:
-      if node.is_leaf:
+      if node.isLeaf():
         resultNode.update(leafNode)
         results_leaf.append(resultNode)
       else:
